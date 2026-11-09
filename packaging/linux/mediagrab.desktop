@@ -1,0 +1,9 @@
+[Desktop Entry]
+Type=Application
+Name=MediaGrab
+Comment=Download your own videos, music and audio
+Exec=mediagrab
+Icon=mediagrab
+Categories=AudioVideo;Audio;Video;Network;
+Terminal=false
+StartupWMClass=mediagrab

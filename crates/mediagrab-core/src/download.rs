@@ -6,12 +6,11 @@
 //! It also gives us SoundCloud (and ~1800 other sites) for free.
 
 use crate::parse::{parse_line, sanitize_dir_name, Line, FILE_MARK, POST_MARK, PROGRESS_MARK};
-use crate::resolve::spawn_error;
+use crate::resolve::{command, spawn_error};
 use crate::types::{Event, Item, ItemState, Mode, Options};
 use std::path::{Path, PathBuf};
 use std::process::Stdio;
 use tokio::io::{AsyncBufReadExt, AsyncRead, BufReader};
-use tokio::process::Command;
 use tokio::sync::{mpsc, watch};
 
 /// Build the yt-dlp argument list for one item. Pure function => unit tested.
@@ -148,7 +147,7 @@ pub async fn download_item(
     };
     send_state(ItemState::Downloading);
 
-    let mut child = match Command::new(&opts.ytdlp)
+    let mut child = match command(&opts.ytdlp)
         .args(build_args(opts, item))
         .stdin(Stdio::null())
         .stdout(Stdio::piped())
@@ -233,7 +232,7 @@ pub async fn download_item(
 
 async fn save_cover_file(opts: &Options, item: &Item) {
     // Best effort: a failure here must not turn a successful download into a failed one.
-    let _ = Command::new(&opts.ytdlp)
+    let _ = command(&opts.ytdlp)
         .args(cover_args(opts, item))
         .stdin(Stdio::null())
         .stdout(Stdio::null())

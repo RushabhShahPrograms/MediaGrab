@@ -1,0 +1,131 @@
+name: Release
+
+# Push a tag like  v0.1.0  to build installers for all 3 platforms and publish a GitHub Release.
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:   # manual run: builds the files (as workflow artifacts) without publishing
+
+permissions:
+  contents: write
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  windows:
+    runs-on: windows-latest
+    defaults: { run: { shell: bash } }
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: Version
+        run: |
+          if [ "$GITHUB_REF_TYPE" = "tag" ]; then v="${GITHUB_REF_NAME#v}"; else v="0.0.0-dev"; fi
+          echo "VERSION=$v" >> "$GITHUB_ENV"
+      - name: Build
+        run: cargo build --release -p mediagrab-app
+      - name: Bundle yt-dlp, ffmpeg, deno
+        run: bash scripts/fetch-tools.sh windows x64
+      - name: Installer (Inno Setup)
+        run: |
+          choco install innosetup -y --no-progress
+          APP_VERSION="$VERSION" "/c/Program Files (x86)/Inno Setup 6/ISCC.exe" packaging/windows/mediagrab.iss
+      - name: Portable zip
+        run: |
+          mkdir -p dist/portable/MediaGrab
+          cp target/release/mediagrab.exe dist/portable/MediaGrab/
+          cp -R dist/tools dist/portable/MediaGrab/tools
+          (cd dist/portable && 7z a -tzip "../MediaGrab-$VERSION-windows-x64-portable.zip" MediaGrab >/dev/null)
+      - uses: actions/upload-artifact@v4
+        with:
+          name: windows
+          path: |
+            dist/MediaGrab-*-setup.exe
+            dist/MediaGrab-*-portable.zip
+
+  macos:
+    runs-on: macos-latest
+    strategy:
+      matrix:
+        include:
+          - { target: aarch64-apple-darwin, arch: arm64, label: arm64 }   # Apple Silicon
+          - { target: x86_64-apple-darwin,  arch: x64,   label: intel }   # Intel Macs
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: ${{ matrix.target }}
+      - name: Version
+        run: |
+          if [ "$GITHUB_REF_TYPE" = "tag" ]; then v="${GITHUB_REF_NAME#v}"; else v="0.0.0-dev"; fi
+          echo "VERSION=$v" >> "$GITHUB_ENV"
+      - name: Build
+        run: cargo build --release -p mediagrab-app --target ${{ matrix.target }}
+      - name: Bundle yt-dlp, ffmpeg, deno
+        run: bash scripts/fetch-tools.sh macos ${{ matrix.arch }}
+      - name: App bundle + DMG
+        run: bash packaging/macos/build-dmg.sh "$VERSION" ${{ matrix.target }} ${{ matrix.label }}
+      - uses: actions/upload-artifact@v4
+        with:
+          name: macos-${{ matrix.label }}
+          path: dist/MediaGrab-*.dmg
+
+  linux:
+    runs-on: ubuntu-22.04      # older glibc = runs on more distros
+    steps:
+      - uses: actions/checkout@v4
+      - name: System libraries for GPUI
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            build-essential pkg-config cmake clang curl xz-utils unzip \
+            libxkbcommon-dev libxkbcommon-x11-dev libwayland-dev libx11-xcb-dev libxcb1-dev \
+            libfontconfig-dev libvulkan-dev libasound2-dev libssl-dev libzstd-dev
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: Version
+        run: |
+          if [ "$GITHUB_REF_TYPE" = "tag" ]; then v="${GITHUB_REF_NAME#v}"; else v="0.0.0-dev"; fi
+          echo "VERSION=$v" >> "$GITHUB_ENV"
+      - name: Build
+        run: cargo build --release -p mediagrab-app
+      - name: Bundle yt-dlp, ffmpeg, deno
+        run: bash scripts/fetch-tools.sh linux x64
+      - name: .deb package
+        run: |
+          cargo install cargo-deb --locked
+          cargo deb -p mediagrab-app --no-build --deb-version "$VERSION" -o "dist/MediaGrab-$VERSION-linux-amd64.deb"
+      - name: AppImage
+        run: bash packaging/linux/build-appimage.sh "$VERSION"
+      - name: tar.gz
+        run: |
+          mkdir -p dist/tar/MediaGrab
+          cp target/release/mediagrab dist/tar/MediaGrab/
+          cp -R dist/tools dist/tar/MediaGrab/tools
+          tar -czf "dist/MediaGrab-$VERSION-linux-x86_64.tar.gz" -C dist/tar MediaGrab
+      - uses: actions/upload-artifact@v4
+        with:
+          name: linux
+          path: |
+            dist/MediaGrab-*.deb
+            dist/MediaGrab-*.AppImage
+            dist/MediaGrab-*.tar.gz
+
+  publish:
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: [windows, macos, linux]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+          merge-multiple: true
+      - uses: softprops/action-gh-release@v2
+        with:
+          files: artifacts/*
+          generate_release_notes: true

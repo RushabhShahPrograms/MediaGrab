@@ -11,6 +11,11 @@
 //!
 //! Extra dependency for this version: `rfd = "0.15"` (native "Browse folder" dialog).
 
+// Release builds on Windows must not open a black console window behind the app.
+#![cfg_attr(all(target_os = "windows", not(debug_assertions)), windows_subsystem = "windows")]
+
+mod tools; // finds the yt-dlp / ffmpeg / deno bundled with the installer
+
 use gpui::{
     div, linear_color_stop, linear_gradient, prelude::*, px, relative, rgb, size, App, Application,
     Background, Bounds, Context, Div, Entity, FontWeight, Hsla, SharedString, Stateful,
@@ -838,6 +843,9 @@ impl Render for MediaGrab {
 }
 
 fn main() {
+    // Put the bundled tools folder (if any) first on PATH, before any thread starts.
+    tools::add_bundled_tools_to_path();
+
     // The engine runs on tokio; keep the runtime alive for the whole program.
     let rt = tokio::runtime::Builder::new_multi_thread()
         .enable_all()

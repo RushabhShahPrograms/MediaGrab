@@ -6,8 +6,20 @@
 
 use crate::parse::parse_entries;
 use crate::types::Item;
+use std::ffi::OsStr;
 use std::process::Stdio;
 use tokio::process::Command;
+
+/// Every child process (yt-dlp, ffmpeg via yt-dlp) is created through this helper.
+/// On Windows it sets CREATE_NO_WINDOW so no black console window flashes when the
+/// GUI app runs without a console. On other platforms it is a plain `Command::new`.
+pub(crate) fn command(program: impl AsRef<OsStr>) -> Command {
+    #[allow(unused_mut)]
+    let mut c = Command::new(program);
+    #[cfg(windows)]
+    c.creation_flags(0x0800_0000); // CREATE_NO_WINDOW
+    c
+}
 
 pub async fn resolve(
     ytdlp: &str,
@@ -15,7 +27,7 @@ pub async fn resolve(
     url: &str,
     first_id: usize,
 ) -> Result<Vec<Item>, String> {
-    let out = Command::new(ytdlp)
+    let out = command(ytdlp)
         .args([
             "--flat-playlist",
             "--dump-json",
