@@ -18,6 +18,11 @@ gpui-component = "0.5.1"
 tokio = { version = "1", features = ["rt-multi-thread", "sync"] }
 rfd = "0.15"
 
+# Linux only: the `xattr` crate (pulled in by gpui) needs `libc::ENOATTR`, which libc removed
+# for Linux in 0.2.190. Keep libc below that until gpui/xattr are updated.
+[target.'cfg(target_os = "linux")'.dependencies]
+libc = ">=0.2.150, <0.2.190"
+
 [build-dependencies]
 winresource = "0.1"
 
